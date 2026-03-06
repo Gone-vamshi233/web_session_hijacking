@@ -1,16 +1,27 @@
 import streamlit as st
 import uuid
 import datetime
+import json
+import os
 
-# login credentials
 VALID_USERNAME = "admin"
 VALID_PASSWORD = "secure@2026"
 
-# store sessions
-if "user_sessions" not in st.session_state:
-    st.session_state.user_sessions = {}
+SESSION_FILE = "sessions.json"
 
-# attack log function
+
+def load_sessions():
+    if os.path.exists(SESSION_FILE):
+        with open(SESSION_FILE, "r") as f:
+            return json.load(f)
+    return {}
+
+
+def save_sessions(data):
+    with open(SESSION_FILE, "w") as f:
+        json.dump(data, f)
+
+
 def log_attack(username, ip, reason):
 
     log = f"{datetime.datetime.now()} | User:{username} | IP:{ip} | Reason:{reason}\n"
@@ -20,26 +31,27 @@ def log_attack(username, ip, reason):
 
     st.error("⚠ Session Hijacking Detected!")
 
-# login page
+
 st.title("Secure Login System")
 
 username = st.text_input("Username")
 password = st.text_input("Password", type="password")
 
+sessions = load_sessions()
+
 if st.button("Login"):
 
     if username == VALID_USERNAME and password == VALID_PASSWORD:
 
-        ip = "Simulated_IP"
-        browser = "Simulated_Browser"
+        ip = str(uuid.uuid4())
 
-        if username in st.session_state.user_sessions:
+        if username in sessions:
 
-            old_ip = st.session_state.user_sessions[username]["ip"]
+            old_ip = sessions[username]["ip"]
 
             if old_ip != ip:
 
-                log_attack(username, ip, "Login from different IP")
+                log_attack(username, ip, "Login from another device")
                 st.stop()
 
         session_id = str(uuid.uuid4())
@@ -47,23 +59,31 @@ if st.button("Login"):
         st.session_state["user"] = username
         st.session_state["session_id"] = session_id
 
-        st.session_state.user_sessions[username] = {
+        sessions[username] = {
             "session_id": session_id,
-            "ip": ip,
-            "browser": browser
+            "ip": ip
         }
+
+        save_sessions(sessions)
 
         st.success("Login Successful")
 
-# dashboard
+
 if "user" in st.session_state:
 
     st.header(f"Welcome {st.session_state['user']}")
 
-    st.write("Your session is secure.")
-
     st.write("Session ID:", st.session_state["session_id"])
 
     if st.button("Logout"):
+
+        sessions = load_sessions()
+
+        if st.session_state["user"] in sessions:
+            del sessions[st.session_state["user"]]
+
+        save_sessions(sessions)
+
         st.session_state.clear()
-        st.success("Logged out")    
+
+        st.success("Logged out")
