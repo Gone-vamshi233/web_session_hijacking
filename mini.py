@@ -5,7 +5,7 @@ import json
 import os
 
 VALID_USERNAME = "admin"
-VALID_PASSWORD = "secure@2026"
+VALID_PASSWORD = "secure@2025"
 
 SESSION_FILE = "sessions.json"
 
