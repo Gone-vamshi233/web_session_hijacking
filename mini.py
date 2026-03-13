@@ -1,23 +1,38 @@
 import streamlit as st
 import uuid
 import datetime
+import sqlite3
 from streamlit.web.server.websocket_headers import _get_websocket_headers
 
-# -------------------------------
-# LOGIN CREDENTIALS
-# -------------------------------
+# ----------------------------
+# DATABASE SETUP
+# ----------------------------
+
+conn = sqlite3.connect("sessions.db", check_same_thread=False)
+cursor = conn.cursor()
+
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS sessions(
+username TEXT,
+session_id TEXT,
+ip TEXT,
+user_agent TEXT
+)
+""")
+
+conn.commit()
+
+# ----------------------------
+# Login credentials
+# ----------------------------
+
 VALID_USERNAME = "admin"
-VALID_PASSWORD = "secure@202"
+VALID_PASSWORD = "secure@2026"
 
-# -------------------------------
-# SESSION STORAGE
-# -------------------------------
-if "user_sessions" not in st.session_state:
-    st.session_state.user_sessions = {}
+# ----------------------------
+# Get real IP address
+# ----------------------------
 
-# -------------------------------
-# GET CLIENT IP
-# -------------------------------
 def get_client_ip():
     try:
         headers = _get_websocket_headers()
@@ -30,9 +45,10 @@ def get_client_ip():
         pass
     return "Unknown"
 
-# -------------------------------
-# GET USER AGENT
-# -------------------------------
+# ----------------------------
+# Get user agent
+# ----------------------------
+
 def get_user_agent():
     try:
         headers = _get_websocket_headers()
@@ -42,19 +58,18 @@ def get_user_agent():
         pass
     return "Unknown"
 
-# -------------------------------
-# ATTACK LOGGER
-# -------------------------------
+# ----------------------------
+# Attack log
+# ----------------------------
+
 def log_attack(username, ip, reason):
 
-    log = f"{datetime.datetime.now()} | USER:{username} | IP:{ip} | REASON:{reason}\n"
+    log = f"{datetime.datetime.now()} | User:{username} | IP:{ip} | Reason:{reason}\n"
 
     with open("attack_log.txt", "a") as f:
         f.write(log)
 
-    # RED ALERT MESSAGE
-    st.error(
-        f"""
+    st.error(f"""
 🚨 SECURITY ALERT 🚨
 
 User: **{username}**
@@ -62,46 +77,45 @@ User: **{username}**
 IP Address: **{ip}**
 
 Reason: **{reason}**
-"""
-    )
+""")
 
+# ----------------------------
+# Main title
+# ----------------------------
 
-# -------------------------------
-# APP TITLE
-# -------------------------------
 st.title("🔒 Session Hijacking Detection System")
 
-# -------------------------------
-# SIDEBAR SESSION INFO
-# -------------------------------
+# ----------------------------
+# Sidebar
+# ----------------------------
+
 if "user" in st.session_state:
 
     with st.sidebar:
 
         st.success(f"Logged in as: {st.session_state['user']}")
 
-        st.write("### Session Details")
-
         st.write(f"Session ID: {st.session_state.get('session_id','N/A')[:8]}...")
 
-        st.write(f"IP Address: {get_client_ip()}")
+        st.write(f"Your IP: {get_client_ip()}")
 
         st.write(f"Browser: {get_user_agent()[:50]}")
 
-        if st.button("🚪 Logout"):
+        if st.button("Logout"):
 
-            username = st.session_state.get("user")
+            username = st.session_state["user"]
 
-            if username in st.session_state.user_sessions:
-                del st.session_state.user_sessions[username]
+            cursor.execute("DELETE FROM sessions WHERE username=?", (username,))
+            conn.commit()
 
             st.session_state.clear()
 
             st.rerun()
 
-# -------------------------------
-# IF USER LOGGED IN
-# -------------------------------
+# ----------------------------
+# USER LOGGED IN
+# ----------------------------
+
 if "user" in st.session_state:
 
     username = st.session_state["user"]
@@ -109,22 +123,21 @@ if "user" in st.session_state:
     st.header(f"Welcome {username} 👋")
 
     current_ip = get_client_ip()
-
     current_agent = get_user_agent()
 
-    # -------------------------------
-    # VERIFY SESSION SECURITY
-    # -------------------------------
-    if username in st.session_state.user_sessions:
+    cursor.execute("SELECT * FROM sessions WHERE username=?", (username,))
+    stored = cursor.fetchone()
 
-        stored = st.session_state.user_sessions[username]
+    if stored:
 
-        # IP CHANGE DETECTION
-        if stored["ip"] != current_ip:
+        stored_ip = stored[2]
+        stored_agent = stored[3]
 
-            reason = f"IP changed from {stored['ip']} to {current_ip}"
+        # IP change detection
+        if stored_ip != current_ip:
 
-            log_attack(username, current_ip, reason)
+            log_attack(username, current_ip,
+                       f"IP changed from {stored_ip} to {current_ip}")
 
             st.warning("Session terminated due to security risk")
 
@@ -134,12 +147,11 @@ if "user" in st.session_state:
 
             st.stop()
 
-        # BROWSER CHANGE DETECTION
-        if stored["user_agent"] != current_agent:
+        # Browser change detection
+        if stored_agent != current_agent:
 
-            reason = "Browser/User-Agent changed"
-
-            log_attack(username, current_ip, reason)
+            log_attack(username, current_ip,
+                       "Browser/User-Agent changed")
 
             st.warning("Session terminated due to browser change")
 
@@ -149,12 +161,7 @@ if "user" in st.session_state:
 
             st.stop()
 
-    # -------------------------------
-    # SESSION SAFE MESSAGE
-    # -------------------------------
     st.success("✅ Your session is secure")
-
-    st.subheader("Current Session Info")
 
     col1, col2 = st.columns(2)
 
@@ -162,35 +169,24 @@ if "user" in st.session_state:
         st.metric("IP Address", current_ip)
 
     with col2:
-        st.metric("Session ID", st.session_state.get("session_id")[:8] + "...")
+        st.metric("Session ID", st.session_state["session_id"][:8] + "...")
 
     st.info(f"Browser: {current_agent}")
 
-    # -------------------------------
-    # ADMIN ACTIVE SESSIONS
-    # -------------------------------
-    if st.checkbox("Show Active Sessions (Admin Only)"):
-
-        st.subheader("Active Sessions")
-
-        st.json(st.session_state.user_sessions)
-
-# -------------------------------
+# ----------------------------
 # LOGIN PAGE
-# -------------------------------
+# ----------------------------
+
 else:
 
     st.subheader("🔐 Login")
 
-    st.info(
-        """
+    st.info("""
 Demo Credentials
 
 Username: admin
-
 Password: secure@2026
-"""
-    )
+""")
 
     with st.form("login_form"):
 
@@ -205,43 +201,35 @@ Password: secure@2026
             if username == VALID_USERNAME and password == VALID_PASSWORD:
 
                 ip = get_client_ip()
+                agent = get_user_agent()
 
-                user_agent = get_user_agent()
+                cursor.execute(
+                    "SELECT * FROM sessions WHERE username=?", (username,))
+                existing = cursor.fetchone()
 
-                # -------------------------------
-                # CHECK CONCURRENT LOGIN
-                # -------------------------------
-                if username in st.session_state.user_sessions:
+                # Detect concurrent login
+                if existing:
 
-                    old_ip = st.session_state.user_sessions[username]["ip"]
+                    old_ip = existing[2]
+                    old_agent = existing[3]
 
-                    old_agent = st.session_state.user_sessions[username]["user_agent"]
+                    if old_ip != ip or old_agent != agent:
 
-                    if old_ip != ip or old_agent != user_agent:
-
-                        reason = f"Concurrent login detected. Old IP: {old_ip}, New IP: {ip}"
+                        reason = f"Concurrent login attempt. Old IP: {old_ip}, New IP: {ip}"
 
                         log_attack(username, ip, reason)
 
                         st.stop()
 
-                # -------------------------------
-                # CREATE SESSION
-                # -------------------------------
                 session_id = str(uuid.uuid4())
 
+                cursor.execute("DELETE FROM sessions WHERE username=?", (username,))
+                cursor.execute("INSERT INTO sessions VALUES(?,?,?,?)",
+                               (username, session_id, ip, agent))
+                conn.commit()
+
                 st.session_state["user"] = username
-
                 st.session_state["session_id"] = session_id
-
-                st.session_state.user_sessions[username] = {
-
-                    "session_id": session_id,
-
-                    "ip": ip,
-
-                    "user_agent": user_agent,
-                }
 
                 st.success("Login Successful")
 
@@ -249,12 +237,11 @@ Password: secure@2026
 
             else:
 
-                st.error("Invalid Username or Password")
+                st.error("Invalid username or password")
 
+# ----------------------------
+# Footer
+# ----------------------------
 
-# -------------------------------
-# FOOTER
-# -------------------------------
 st.markdown("---")
-
-st.caption("Session Hijacking Detection System | Monitors IP & Browser Changes")
+st.caption("Session Hijacking Detection System | Monitors IP and Browser changes")
