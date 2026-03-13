@@ -7,7 +7,7 @@ from streamlit.web.server.websocket_headers import _get_websocket_headers
 # LOGIN CREDENTIALS
 # -------------------------------
 VALID_USERNAME = "admin"
-VALID_PASSWORD = "secure@2026"
+VALID_PASSWORD = "secure@20"
 
 # -------------------------------
 # SESSION STORAGE
